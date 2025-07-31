@@ -1,0 +1,507 @@
+## 发病率-----------------------------
+  # -------------发病率------------------
+# 加载必要的包
+library(readxl)   # 读取Excel文件
+library(ggplot2)  # 绘图
+library(dplyr)    # 数据处理
+library(ggpubr)
+
+# 1. 读取数据
+data <- read_excel("叶片Pi.xlsx")
+
+# 2. 数据处理（确保列名正确）
+# 如果列名包含空格，建议使用反引号包裹或重命名列名
+colnames(data) <- make.names(colnames(data))  # 自动处理特殊字符
+
+# 3. 计算每组的发病率均值
+
+mean_data <- data %>% 
+  group_by(Group) %>% 
+  summarise(
+    Mean = mean(Pi),
+    SEM = sd(Pi)/sqrt(n())
+  )
+
+
+# 4. 绘制图形
+p <- ggplot(data, aes(x = Group, y = Pi)) +
+  scale_x_discrete(limits = c( "LP","NP","HP" ))+
+  # scale_y_continuous(
+  #   breaks = seq(0, 300, by = 50),  # 生成0.0到1.0的0.2间隔
+  #   # labels = c( "0.5", "1.0"),  # 自定义标签
+  #   limits = c(0,300)  # 强制y轴范围从0到1.0
+  # ) +
+  # 1. 箱线图层
+  # geom_boxplot(aes(fill = Group),         # 按组填充颜色
+  #              width = 0.6,               # 箱体宽度
+  #              alpha = 0.5,               # 透明度
+  #              outlier.shape = NA) +      # 隐藏默认异常值
+  # # 添加小提琴图
+  # geom_violin(
+  #             data = data,
+  #             aes(x = Group, y = Pi, fill = Group),
+  #             scale = "width",    # 宽度标准化
+  #             trim = FALSE,       # 保留尾部
+  #             alpha = 0.3         # 设置透明度
+  #             ) +
+  # 添加折线图（连接均值点）
+  # geom_line(data = mean_data,
+  #           aes(x = Group, y = Mean, group = 1),
+  #           color = "red",
+  #           linewidth = 0.5) +
+# 柱状图
+  geom_col(data = mean_data,
+            aes(x = Group, y = Mean, fill = Group),
+           width = 0.6,
+           alpha = 0.8
+           )+
+  # 添加显著性标记
+  stat_compare_means(
+    comparisons = list(c("LP", "NP"), 
+                     c("NP", "HP")),
+                    method = "t.test",
+                    label = "p.signif"
+                    )+
+  # # 2. 散点图层（新增核心部分）
+  # geom_jitter(aes(color = Group),   # 按组着色散点
+  #           width = 0.15,        # 水平抖动范围
+  #           height = 0,          # 垂直不抖动
+  #           size = 2, 
+  #           alpha = 0.6) + 
+  # 添加均值点
+  # geom_point(data = mean_data,
+  #            aes(x = Group, y = Mean),
+  #            color = "red",
+  #            size = 3) +
+  # 在均值点添加SEM误差线
+
+  # geom_errorbar(
+  #   data = mean_data,
+  #   aes(x = Group, y = Mean,  # 必须指定y=Mean
+  #       ymin = Mean - SEM,
+  #       ymax = Mean + SEM),
+  #   width = 0.1,
+  #   color = "red"
+  # ) +
+  # 美化图形
+  labs(x = "Group", 
+       y = "Pi",
+       title = "Pi concentration") +
+  theme_minimal() +
+  theme( # 绘图区域边框设置
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1.2),
+    # 坐标轴设置
+    axis.line = element_blank(),
+    axis.ticks.length = unit(4, "pt"),  # 加长刻度线
+    # 边距调整
+    plot.margin = margin(20, 20, 20, 20, unit = "pt"),
+    legend.position = "none")   # 隐藏图例
+p
+ggsave("./叶片Pi.pdf",p, width = 8,height =8)
+
+# 加载必要的包
+library(readxl)
+library(ggplot2)
+library(viridis)
+
+# 读取Excel文件（假设文件在当前工作目录）
+data <- read_excel("disease.xls", sheet = 1)
+
+# 查看数据结构
+str(data)
+
+# 指定自定义分组顺序（按需求修改此向量）
+custom_order <- c("LP-HP-DRM", "NP-HP-DRM", "LP-CK", "NP-CK", "HP-CK", "NP-LP-DRM", "HP-LP-DRM")
+
+# 将Group转换为因子并设置指定顺序
+data$Group <- factor(data$Group, levels = custom_order)
+
+# 绘制箱线图（带数据点）
+p <- ggplot(data, aes(x = Group, y = diease, fill = Group, color = Group)) +
+  geom_boxplot(alpha = 0.1, outlier.shape = NA) +  # 箱线图
+  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) + 
+  geom_jitter(width = 0.15, size = 1, shape = 21, stroke = 1.2) +  # 显示数据点
+  scale_fill_viridis(discrete = TRUE, option = "D") +
+  scale_color_viridis(discrete = TRUE, option = "D") +
+  labs(title = "Disease Distribution by Group",
+       x = "Experimental Group",
+       y = "Disease Incidence") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    legend.position = "none")
+  
+p
+ggsave("./代谢物发病率.pdf",p, width = 10,height =12)
+
+## 群落构建机制分析（需系统发育树）---------------
+# 计算βNTI（需phylo_tree）
+library(phyloseq)
+library(picante)
+library(ape)
+library(parallel)
+library(ggplot2)
+# devtools::install_github("Russel88/MicEco")
+library(MicEco) 
+compute_bNTI <- function(physeq, nperm = 10) {
+  # 提取OTU表和系统发育树
+  otu_table <- t(as(otu_table(physeq), "matrix"))
+  phylo_tree <- phy_tree(physeq)
+  
+  # 匹配数据和系统发育树
+  matched <- match.phylo.comm(phylo_tree, otu_table)
+  comm <- matched$comm
+  phylo <- matched$phy
+  
+  # 计算cophenetic距离
+  phydist <- cophenetic(phylo)
+  
+  # 计算观测bMNTD
+  bmntd.obs <- as.matrix(comdistnt(comm, phydist, abundance.weighted = TRUE))
+  
+  # 并行化随机化计算
+  cl <- makeCluster(detectCores() - 1)
+  
+  # 导出所有必要变量到并行环境
+  clusterExport(cl, varlist = c("comm", "phydist", "nperm"), envir = environment())
+  clusterEvalQ(cl, library(picante))  # 确保每个节点加载包
+  
+  # 执行并行计算
+  bmntd.rand <- parLapply(cl, 1:nperm, function(i) {
+    rand_dist <- phydist
+    rand_names <- sample(colnames(phydist))
+    colnames(rand_dist) <- rownames(rand_dist) <- rand_names
+    as.matrix(comdistnt(comm, rand_dist, abundance.weighted = TRUE))
+  })
+  
+  stopCluster(cl)
+  
+  # 计算βNTI
+  rand_array <- array(unlist(bmntd.rand), dim = c(nrow(bmntd.obs), ncol(bmntd.obs), nperm))
+  bNTI <- (bmntd.obs - apply(rand_array, c(1,2), mean)) / apply(rand_array, c(1,2), sd)
+
+diag(bNTI) <- NA
+return(bNTI)
+}
+# 执行计算
+beta_nti <- compute_bNTI(ps_filtered, nperm = 10)
+
+# 计算RCbray --------------------------------------------------------------
+ps_css <- microbiome::transform(ps_filtered, "CSS")  # CSS标准化
+RCbray <- MicEco::calc_rcbray(ps_css, group = "Group")
+
+# 可视化βNTI分布 ----------------------------------------------------------
+# 转换βNTI矩阵为长格式数据框
+library(reshape2)
+beta_nti_df <- melt(beta_nti) %>%
+  left_join(sample_data(ps_filtered) %>% 
+              select(SampleID, Group) %>% 
+              mutate(SampleID = as.character(SampleID)),
+            by = c("Var1" = "SampleID"))
+
+p <- ggplot(beta_nti_df, aes(x = value, fill = Group)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = c(-2, 2), linetype = "dashed") +
+  labs(title = "βNTI Distribution Across Treatments",
+       x = "βNTI", y = "Density") +
+  theme_bw()
+# βNTI作图--------------------
+# 加载必要的库
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(gridExtra)
+
+# 读取数据
+data <- read.csv("itsbNTI.csv", header = TRUE)
+
+# 提取浓度信息
+get_conc <- function(sample) {
+  case_when(
+    grepl("LP", sample) ~ "LP",
+    grepl("NP", sample) ~ "NP",
+    grepl("HP", sample) ~ "HP",
+    TRUE ~ NA_character_
+  )
+}
+
+# 长数据转换用于堆叠柱状图
+
+
+data_grouped <- data %>%
+  mutate(
+    conc = get_concentration(Sample_1)
+  ) %>%
+  filter(!is.na(conc)) %>%  # 移除NA值
+  select(conc, bNTI)  # 保留关键列
+
+# Shapiro-Wilk正态性检验
+shapiro_results <- data_grouped %>%
+  group_by(conc) %>%
+  summarise(
+    p_value = shapiro.test(bNTI)$p.value
+  )
+print(shapiro_results)
+
+# 组间比较（若正态则用t检验，否则用Wilcoxon检验）
+comparisons <- list(
+  c("LP", "NP"),
+  c("NP", "HP"),
+  c("LP", "HP")
+)
+
+# 绘制箱线图
+p <- ggplot(data_grouped, aes(x = conc, y = bNTI, fill = conc)) +
+  geom_boxplot(width = 0.6, outlier.shape = NA) +
+  scale_x_discrete(limits = c( "LP","NP","HP" ))+
+  geom_jitter(width = 0.2, alpha = 0.5, size = 2) +  # 添加散点
+  geom_hline(yintercept = c(-2, 2), linetype = "dashed", color = "red") +
+  stat_compare_means(
+    comparisons = comparisons,
+    method = ifelse(all(shapiro_results$p_value > 0.05), "t.test", "wilcox.test"),
+    label = "p.signif"
+  ) +
+  labs(
+    title = "βNTI Distribution by Concentration",
+    x = "Concentration Group",
+    y = "βNTI"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_blank()
+  ) +
+  scale_fill_brewer(palette = "Set2")
+p
+ggsave(paste0("./βNTIits.pdf"),p,width = 8,height = 7)
+## 拮抗竞争----------------------
+# 加载必要的包
+library(readxl)
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(cowplot)
+library(stringr)
+library(scales)
+
+# 读取Excel文件
+df <- read_excel("对峙.xls", sheet = "Sheet1")
+
+# 确保编号按原始顺序排列
+df$id <- factor(df$id, levels = unique(df$id))
+
+# 1. 创建柱状图（带颜色映射）
+bar_plot <- ggplot(df, aes(x = id, y = `Pathogen inhibition rate`)) +
+  geom_bar(stat = "identity", width = 0.7, fill = "#afa3d8") +  # 使用固定紫色
+  labs(x = "Strain ID", y = "Pathogen Inhibition Rate", 
+       title = "Microbial Competition Analysis") +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.major.x = element_blank(),
+    legend.position = "none"
+  )
+bar_plot 
+ggsave("./抑制圈.pdf",bar_plot , width = 10,height =12)
+# 2. 竞争图
+p <- ggplot(df, aes(x = id, y = `Competitive Advantage`)) +
+  geom_bar(stat = "identity", width = 0.7, fill = "#93b9a7") +  # 使用固定紫色
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1))+
+  labs(x = "Strain ID", y = "Pathogen Inhibition Rate", 
+       title = "Microbial Competition Analysis") +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    panel.grid.major.x = element_blank(),
+    legend.position = "none"
+  )
+  
+  p
+  ggsave("./竞争2.pdf",p  , width = 10,height =12)
+## 趋向性--------------------------
+  # 加载必要的包
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+# 读取Excel文件（注意：文件路径可能需要根据实际情况调整）
+data <- read_excel("qu.xlsx", sheet = "Sheet1")
+# 1. 指定菌株顺序 - 按照B_1到B_19的顺序
+strain_order <- c("B_1", "B_2", "B_3", "B_4", "B_5", "B_6", "B_7", "B_8", "B_9", 
+                  "B_10", "B_11", "B_12", "B_13", "B_14", "B_15", "B_16", "B_17", "B_18", "B_19")
+
+data <- data %>%
+  mutate(strain_ordered = factor(strain, levels = strain_order))
+# 计算每个菌株-处理组合的统计量（均值、标准差、标准误）
+summary_data <- data %>%
+  group_by(strain_ordered, treat) %>%
+  summarise(
+    mean_log = mean(log, na.rm = TRUE),
+    sd_value = sd(log, na.rm = TRUE),  # 计算标准差并命名为sd_value
+    n = n(),
+    se = sd_value / sqrt(n),           # 使用sd_value计算标准误
+    .groups = "drop"
+  )
+
+# 创建分组点图
+p <- ggplot(summary_data, aes(x = strain_ordered, y = mean_log, color = treat)) +
+  geom_point(
+    position = position_dodge(width = 0.8),
+    size = 3,
+    shape = 16
+  ) +
+  geom_errorbar(
+    aes(ymin = mean_log - se, ymax = mean_log + se),
+    width = 0.2,
+    position = position_dodge(width = 0.8),
+    linewidth = 0.8  # 使用linewidth代替size
+  ) +
+  labs(
+    title = "菌株处理效果分析",
+    x = "菌株名称",
+    y = "Log值",
+    color = "处理类型"
+  ) +
+  scale_color_manual(
+    values = c("LB" = "#F8766D", 
+               "CK" = "#7CAE00", 
+               "A100u" = "#00BFC4", 
+               "B100u" = "#C77CFF")
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+p
+ggsave("./趋向性.pdf",p, width = 10,height =12)
+
+## 进化树--------------------------
+  library(BiocManager)
+library(Biostrings)
+library(msa)
+library(phangorn) 
+library(ggtree)
+library(ape)
+library(dplyr)
+library(ggplot2)
+library(stringdist)
+library(scales)
+
+# 1. 读取TXT文件
+data <- read.delim("ASV1.txt", stringsAsFactors = FALSE)
+
+# 检查数据
+cat("数据行数:", nrow(data), "\n")
+cat("列名:", paste(colnames(data), collapse = ", "), "\n")
+print(head(data))
+
+# 2. 清理序列 - 移除所有非碱基字符
+# 假设序列列名为"xu"，如果不是请修改
+data$xu <- gsub("[^ACGTN]", "", toupper(data$xu))
+
+# 3. 使用字符串距离直接计算序列相似性（不截断不对齐）
+n_samples <- nrow(data)
+dist_matrix <- matrix(0, nrow = n_samples, ncol = n_samples)
+rownames(dist_matrix) <- data$id
+colnames(dist_matrix) <- data$id
+
+# 计算所有序列对的距离
+for (i in 1:n_samples) {
+  for (j in 1:n_samples) {
+    if (i == j) {
+      dist_matrix[i, j] <- 0  # 自身距离为0
+    } else {
+      # 使用字符串编辑距离（Levenshtein距离）
+      dist_value <- stringdist(data$xu[i], data$xu[j], method = "lv")
+      
+      # 归一化距离（0-1范围）
+      max_len <- max(nchar(data$xu[i]), nchar(data$xu[j]))
+      if (max_len > 0) {
+        dist_matrix[i, j] <- dist_value / max_len
+      } else {
+        dist_matrix[i, j] <- 1  # 如果序列长度为0，距离设为1
+      }
+    }
+  }
+}
+
+# 4. 转换为dist对象
+dist_obj <- as.dist(dist_matrix)
+
+# 5. 构建系统发育树（使用UPGMA方法）
+tree <- hclust(dist_obj, method = "average")
+tree <- as.phylo(tree)
+
+# 6. 添加属信息 - 使用Genus列
+genus_data <- data %>% select(id, Genus)  # 注意使用Genus列
+
+# 7. 可视化环状树
+# 获取唯一的属名
+unique_genus <- unique(na.omit(genus_data$Genus))
+n_genus <- length(unique_genus)
+
+# 生成颜色（使用hue_pal）
+genus_colors <- hue_pal()(n_genus)
+
+# 创建基本树图
+p <- ggtree(tree, layout = "circular", size = 0.8) %<+% genus_data
+
+# 添加高亮 - 为每个属添加高亮
+if (nrow(genus_data) > 0 && n_genus > 0) {
+  # 获取每个属对应的节点
+  genus_nodes <- genus_data %>%
+    left_join(tibble(label = tree$tip.label, node = 1:length(tree$tip.label)), 
+              by = c("id" = "label")) %>%
+    filter(!is.na(node)) %>%
+    group_by(Genus) %>%
+    summarise(nodes = list(node)) %>%
+    ungroup()
+  
+  # 为每个属添加高亮
+  for (i in 1:nrow(genus_nodes)) {
+    genus <- genus_nodes$Genus[i]
+    nodes <- genus_nodes$nodes[[i]]
+    color_index <- match(genus, unique_genus)
+    color <- genus_colors[color_index]
+    
+    for (node in nodes) {
+      p <- p + geom_hilight(
+        node = node,
+        fill = color,
+        alpha = 0.3
+      )
+    }
+  }
+}
+
+# 添加标签和图例
+p <- p +
+  geom_tiplab(aes(label = label), size = 3, offset = 0.02, hjust = -0.1) +
+  # 添加图例
+  geom_point(data = data.frame(Genus = unique_genus), 
+             aes(x = 0, y = 0, color = Genus), alpha = 0) +
+  scale_color_manual(
+    name = "Genus", 
+    values = setNames(genus_colors, unique_genus),
+    guide = guide_legend(override.aes = list(alpha = 1, size = 5))
+  ) +
+  theme(plot.margin = unit(c(3, 3, 3, 3), "cm")) +
+  theme(legend.position = "right")
+
+# 显示图形
+print(p)
+
+
+
+# 保存图形（可选）
+ggsave("circularits.pdf", p, width = 12, height = 10, dpi = 300)
+  
