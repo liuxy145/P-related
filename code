@@ -1,4 +1,4 @@
-# data obtained from 10.6084/m9.figshare.30356206
+# data obtained from https://doi.org/10.6084/m9.figshare.30356206.v1.
 ## Fig.1A----------------------
 library(readxl)   
 library(ggplot2)  
