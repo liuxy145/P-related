@@ -22,7 +22,7 @@ saveRDS(ps,"./ps_16s.rds")
 # #---result1 base_diversity analyses-------------
 otupath = paste(res1path,"/OTU_220715/",sep = "");otupath
 dir.create(otupath)
-# --------alpha
+# --------alpha----------------
 alppath = paste(otupath,"/alpha/",sep = "")
 dir.create(alppath)
 source("E:\\Shared_Folder\\Function_local\\R_function\\micro/alpha-diversity.R")
