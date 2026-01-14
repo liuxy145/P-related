@@ -1,3 +1,412 @@
+#------Create phyloseq object.----------
+metadata = read.delim("./metadata.tsv")
+head(metadata)
+row.names(metadata) = metadata$SampleID
+otutab = read.table("./result/otutab.txt", header=T, row.names=1, sep="\t", comment.char="", stringsAsFactors = F)
+taxonomy = read.table("./result/taxonomy.txt", header=T, row.names=1, sep="\t", comment.char="", stringsAsFactors = F)
+head(taxonomy )
+library(ggtree)
+tree = read.tree("./result/otus.tree")
+library(Biostrings)
+rep = readDNAStringSet("result/otus.fa")
+# Import the phyloseq object (ps).
+library(phyloseq)
+ps = phyloseq(sample_data(metadata),
+              otu_table(as.matrix(otutab), taxa_are_rows=TRUE), 
+              tax_table(as.matrix(taxonomy)),
+              phy_tree(tree),
+              refseq(rep)
+              )
+ps
+saveRDS(ps,"./ps_16s.rds")
+# #---result1 base_diversity analyses-------------
+otupath = paste(res1path,"/OTU_220715/",sep = "");otupath
+dir.create(otupath)
+# --------alpha
+alppath = paste(otupath,"/alpha/",sep = "")
+dir.create(alppath)
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/alpha-diversity.R")
+index = c("Richness")
+# -------alpha Diversity Analysis
+alp = alpha(ps = ps,inde="Shannon",group = "Group",Plot = TRUE )
+index= alp
+head(index)
+all.alpha = T
+if (all.alpha) {
+  sel = c(match("Inv_Simpson",colnames(index)),
+          match("Pielou_evenness",colnames(index)),
+          match("Simpson_evenness",colnames(index)),
+          match("Richness",colnames(index)),
+          match("Chao1",colnames(index)),
+          match("ACE",colnames(index)),
+          match("Shannon",colnames(index))
+  )
+  h = 3
+} else{
+  sel = c(match("Shannon",colnames(index)),match("Richness",colnames(index)),
+          match("Pielou_evenness",colnames(index)))
+  h = 1
+}
+n = length(sel) + 3
+data = cbind(data.frame(ID = 1:length(index$Group),group = index$Group),index[sel])
+head(data)
+result = EasyStat::MuiKwWlx2(data = data,num = c(3:(n -1)))
+FileName <- paste(alppath,"/alpha_diversity_different_label.csv", sep = "")
+write.csv(result,FileName,sep = "")
+FileName <- paste(alppath,"/alpha_diversity_index.csv", sep = "")
+write.csv(index,FileName,sep = "")
+# --------Ordination analysis of beta-diversity.------------
+betapath = paste(otupath,"/beta/",sep = "")
+dir.create(betapath)
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/BetaDiv.R")
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/MicroTest.R")
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/pairMicroTest.R")
+methodlist = c("PCA")
+for (method in methodlist) {
+  result = BetaDiv(ps = ps, group = "Group", dist = "bray",
+                   method = method, Micromet = "anosim", pvalue.cutoff = 0.05,
+                   pair = T)
+  p3_1 = result[[1]] + 
+    scale_fill_manual(values = colset1)+
+    scale_color_manual(values = colset1,guide = F) +
+    mytheme1 
+  p3_1
+  p3_2 = result[[3]] +
+    scale_fill_manual(values = colset1)+
+    scale_color_manual(values = colset1,guide = F) + 
+    mytheme1 
+    # theme(legend.position = c(0.2,0.2))
+  p3_2
+  cent <- aggregate(cbind(x,y) ~Group, data = plotdata, FUN = mean)
+  cent
+  segs <- merge(plotdata, setNames(cent, c('Group','oNMDS1','oNMDS2')),
+                by = 'Group', sort = FALSE)
+  
+  # p2$layers[[2]] = NULL
+  # library(ggcor)
+  library(ggsci)
+  p3_3 = p3_1 +geom_segment(data = segs,
+                            mapping = aes(xend = oNMDS1, yend = oNMDS2,color = Group),show.legend=F) + # spiders
+    geom_point(mapping = aes(x = x, y = y),data = cent, size = 5,pch = 24,color = "black",fill = "yellow") +
+    scale_fill_manual(values = colset1)+
+    scale_color_manual(values = colset1,guide = F) + 
+    mytheme1 
+    # theme(legend.position = c(0.2,0.2))
+  p3_3
+}
+map
+# Extract overall comparison.
+TResult =result[[5]]
+head(TResult)
+# Extract pairwise comparison results.
+pair = result[[4]]
+pair
+FileName <- paste(betapath,"Pair_anosim.csv", sep = "")
+write.csv(pair,FileName)
+FileName <- paste(betapath,"Total_anosim.csv", sep = "")
+write.csv(TResult,FileName)
+
+# ----------Species composition.--------
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/barMainplot.R")
+barpath = paste(otupath,"/Microbial_composition/",sep = "")
+dir.create(barpath)
+phyloseq::rank_names(ps)
+for (j in c("Phylum" , "Class" ,  "Order"  , "Family" , "Genus")) {
+  result = barMainplot(ps = ps,
+                       j = j,
+                       # axis_ord = axis_order,
+                       label = FALSE,
+                       sd = FALSE,
+                       Top = Top)
+  databar <- result[[2]] %>% group_by(Group,aa) %>%
+    summarise(sum(Abundance)) %>% as.data.frame()
+  head(databar)
+  colnames(databar) = c("Group",j,"Abundance(%)")
+  FileName <- paste(barpath,"/a2_",j,"_bar_data",".csv", sep = "")
+  write.csv(databar,FileName,quote = F)
+}
+detach("package:ggalluvial")
+
+# ----------Differential analysis using edgeR.----------
+diffpath = paste(otupath,"/diff_tax/",sep = "")
+dir.create(diffpath)
+
+diffpath.1 = paste(diffpath,"/DEsep2/",sep = "")
+dir.create(diffpath.1)
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro\\EdgerSuper.R")
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro\\DESep2_micro.R")
+res = DESep2_Meta2(ps = ps,group  = "Group",artGroup =NULL,
+                   j = "OTU",
+                   path = diffpath.1
+)
+head(res)
+filename = paste(diffpath.1,"/","_","OTU","_","DESep2_all.csv",sep = "")
+write.csv(res,filename,quote = F)
+for (j in 2:6) {
+  res = DESep2_Meta2(ps = ps,group  = "Group",artGroup =NULL,
+                     j = j,
+                     path = diffpath.1
+  )
+  head(res)
+  
+  filename = paste(diffpath.1,"/","_",j,"_","DESep2_all.csv",sep = "")
+  write.csv(res,filename,quote = F)
+}
+
+diffpath.2 = paste(diffpath,"/EDgeR/",sep = "")
+dir.create(diffpath.2)
+res = EdgerSuper(ps = ps,group  = "Group",artGroup = NULL,
+                 j = "OTU",
+                 path = diffpath.2
+)
+head(res)
+filename = paste(diffpath.2,"/","_","OTU","_","edger_all.csv",sep = "")
+write.csv(res,filename)
+for (j in c(2:6)) {
+  res = EdgerSuper(ps = ps,group  = "Group",artGroup = NULL,
+                   j = j,
+                   path = diffpath.2
+  )
+  head(res)
+  filename = paste(diffpath.2,"/","_",j,"_","edger_all.csv",sep = "")
+  write.csv(res,filename)
+}
+
+# -----------------Calculate βNTI.------------------
+library(phyloseq)
+library(picante)
+library(ape)
+library(parallel)
+library(ggplot2)
+# devtools::install_github("Russel88/MicEco")
+library(MicEco) 
+compute_bNTI <- function(physeq, nperm = 10) {
+  otu_table <- t(as(otu_table(physeq), "matrix"))
+  phylo_tree <- phy_tree(physeq)
+  # Match the data with the phylogenetic tree. 
+  matched <- match.phylo.comm(phylo_tree, otu_table)
+  comm <- matched$comm
+  phylo <- matched$phy
+  # Calculate cophenetic distances.
+  phydist <- cophenetic(phylo)
+  # Calculate observed bMNTD.
+  bmntd.obs <- as.matrix(comdistnt(comm, phydist, abundance.weighted = TRUE))
+  # Parallelized randomized computation.
+  cl <- makeCluster(detectCores() - 1) 
+  clusterExport(cl, varlist = c("comm", "phydist", "nperm"), envir = environment())
+  clusterEvalQ(cl, library(picante)) 
+  # Execute parallel computing.
+  bmntd.rand <- parLapply(cl, 1:nperm, function(i) {
+    rand_dist <- phydist
+    rand_names <- sample(colnames(phydist))
+    colnames(rand_dist) <- rownames(rand_dist) <- rand_names
+    as.matrix(comdistnt(comm, rand_dist, abundance.weighted = TRUE))
+  })
+  stopCluster(cl)
+  # Calculate βNTI
+  rand_array <- array(unlist(bmntd.rand), dim = c(nrow(bmntd.obs), ncol(bmntd.obs), nperm))
+  bNTI <- (bmntd.obs - apply(rand_array, c(1,2), mean)) / apply(rand_array, c(1,2), sd)
+diag(bNTI) <- NA
+return(bNTI)
+}
+beta_nti <- compute_bNTI(ps_filtered, nperm = 10)
+# Calculate RCbray 
+ps_css <- microbiome::transform(ps_filtered, "CSS")  # CSS标准化
+RCbray <- MicEco::calc_rcbray(ps_css, group = "Group")
+
+process_summary <- beta_nti_df %>%
+  group_by(Group) %>%
+  summarise(
+    Deterministic = mean(abs(value) > 2, na.rm = TRUE) %>% round(2),
+    Stochastic = 1 - Deterministic
+  ) %>%
+  rename(Treatment = Group)
+ print(process_summary)
+# ------------------Machine learning.------
+matpath = paste(otupath,"/Machine_learing/",sep = "")
+dir.create(matpath )
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro\\MicroMachine_learning.R")
+if (ROC ){
+  # Evaluation of three machine learning methods.
+  result = MicroRoc( ps = ps,group  = "Group")
+  #--Extract ROC curves.
+  p <- result[[1]] + 
+    mytheme1
+  p
+  # Extract AUC values.
+  data <- result[[2]]
+  
+  filename = paste(matpath,"/three_method_AUCvalue.csv",sep = "")
+  write.csv(data,filename,quote = F)
+  
+  data <- result[[3]]
+  filename = paste(matpath,"/three_method_AUCdata.csv",sep = "")
+  write.csv(data,filename,quote = F)
+  
+  filename = paste(matpath,"/three_method_AUC_plot.pdf",sep = "")
+  ggsave(filename,p,width = 8,height = 8)
+  filename = paste(matpath,"/three_method_AUC_plot.jpg",sep = "")
+  ggsave(filename,p,width = 8,height = 8)
+}
+mapping = as.data.frame(phyloseq::sample_data(ps))
+
+# ----------Co-occurrence network analysis.----------
+source("E:\\Shared_Folder\\Function_local\\R_function\\my_R_packages\\ggClusterNet\\R\\networkplot.R")
+netpath = paste(otupath,"/network2/",sep = "")
+dir.create(netpath)
+library(igraph)
+library(sna)
+library(phyloseq)
+library(ggClusterNet2)
+library(phyloseq)
+ps_filtered = filter_taxa(ps, function(x) sum(x > 0) / length(x) > 0.1, TRUE) 
+ps = ps_filtered
+result = ggClusterNet::network.2(ps = ps, 
+                   N = 500,
+                   big = TRUE,
+                   maxnode = 5,
+                   select_layout = TRUE,
+                   layout_net = "model_maptree2",
+                   r.threshold=0.6,
+                   p.threshold=0.001,
+                   label = FALSE,
+                   path = netpath,
+                   zipi = F,
+                   ncol = gnum,
+                   nrow = 1,
+                   method = "spearman",
+                   fill = "Genus"
+)
+# Network comparison across all samples.
+p4_1 = result[[1]] + mytheme1
+# Comparison of network parameters across all samples
+data = result[[2]]
+plotname1 = paste(netpath,"/network_all.pdf",sep = "")
+ggsave(plotname1, p4_1,width = 6*gnum,height = 6,limitsize = FALSE)
+tablename <- paste(netpath,"/co-occurrence_Grobel_net",".csv",sep = "")
+write.csv(data,tablename)
+p4_2 = result[[3]] + 
+  scale_fill_brewer(palette = "Paired") +
+  mytheme1
+plotname1 = paste(netpath,"/network_all_cover.pdf",sep = "")
+ggsave(plotname1, p4_2,width = 10*gnum,height = 10,limitsize = FALSE)
+
+# --------------Key metabolite selection (PCA loading-based).------------------
+pcapath = paste(res1path,"/0_Feature_metabolomes/",sep = "")
+dir.create(pcapath)
+ps = readRDS("./data/GCMSdata/ps_GC.rds")
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/loadingPCA.R")
+res = loadingPCA(ps = ps)
+# p = res[[1]]
+# p
+dat = res[[2]] 
+dat$id = row.names(dat)
+id = dat %>% arrange(desc(PCone)) %>% head(15) %>% .$id
+id
+ftab = ps %>% scale_micro() %>%
+  subset_taxa(
+  row.names(tax_table(ps)) %in% c(id)
+) %>% vegan_otu() %>%
+  as.data.frame()
+head(ftab)
+
+#----------Co-inertia analysis of metabolites influencing microbial communities via RDA/CCA.---------------------
+ps16s = base::readRDS("./data/dataNEW/ps_16s.rds")
+psits = base::readRDS("./data/dataNEW/ps_its.rds")
+RDApath = paste(res1path,"/RDA_CCA/",sep = "")
+dir.create(RDApath)
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/rda-cca.R")
+ps<- merge_phyloseq(ps16s, psits)
+result = RDA_CCA(ps = ps,
+                 env = ftab,
+                 path = RDApath,
+                 chose.env = F
+)
+p1 = result[[1]] + mytheme1 + scale_fill_manual(values = colset1)
+p1
+dataplot = result[[2]]
+p2 = result[[3]]+ mytheme1  + scale_fill_manual(values = colset1)
+# Extract the adjacency test results that elucidate community relationships.
+aov = result[[4]]
+# library("Cairo")
+plotnamea = paste(RDApath,"/RDA_envnew.pdf",sep = "")
+ggsave(plotnamea, p1, width = 8, height = 6)
+plotnamea4 = paste(RDApath,"/RDA_envnew.jpg",sep = "")
+ggsave(plotnamea4, p1, width = 8, height = 6)
+filenamea = paste(RDApath,"dataplotnew.txt",sep = "")
+write.table(dataplot ,file=filenamea,sep="\t",col.names=NA)
+filenamea = paste(RDApath,"aovnew.txt",sep = "")
+write.table(aov,file=filenamea,sep="\t",col.names=NA)
+plotnamea = paste(RDApath,"/RDA_envlabelnew.pdf",sep = "")
+ggsave(plotnamea, p2, width = 18, height = 12)#, device = cairo_pdf, family = "Song"
+plotnamea4 = paste(RDApath,"/RDA_envlabelnew.png",sep = "")
+ggsave(plotnamea4, p2, width = 18, height = 12)# , device = cairo_pdf, family = "Song"
+result = RDA_CCA_explain_percent(ps = ps.tem,
+                                 env.dat = ftab)
+out = result[[1]]
+wxp = result[[2]]
+filenamea = paste(RDApath,"each_env_exp_percent.csv",sep = "")
+write.csv(out,filenamea)
+filenamea = paste(RDApath,"all_index_explain_percent.csv",sep = "")
+write.csv(exp,filenamea)
+
+#----------------Co-occurrence network of microbes and metabolites-----------------------
+Envnetplot<- paste(res1path,"/Micro_Metabolites_network_big",sep = "")
+dir.create(Envnetplot)
+ps16s = ps16s
+psITS = readRDS("./data/dataNEW/ps_ITS.rds")
+ps.merge <- ggClusterNet::merge16S_ITS(ps16s = ps16s,
+                                       psITS = psITS,
+                                       N16s = 1000,
+                                       NITS = 1000
+                                       )
+ps.merge
+map =  phyloseq::sample_data(ps.merge)
+head(map)
+map$Group = "one"
+phyloseq::sample_data(ps.merge) <- map
+ftab$ID = row.names(ftab)
+data1 = ftab %>% select(ID,everything())
+Gru = data.frame(ID = colnames(data1)[-1],group = "Metabolites" )
+head(Gru)
+
+library(sna)
+library(igraph)
+result <- corBionetwork(ps = ps.merge,
+                        N = 0,
+                        r.threshold = 0.8, # Relevant threshold
+                        p.threshold = 0.05,
+                        big = T,
+                        group = "Group",
+                        method = "spearman",
+                        env = data1, # Metabolomics data table
+                        envGroup = Gru,# Metabolite grouping file table
+                        # layout = "fruchtermanreingold",
+                        path = Envnetplot,# Result file storage path
+                        fill = "Genus", 
+                        size = "igraph.degree", # Node size scaled by degree centrality
+                        scale = TRUE, # Relative abundance normalization
+                        bio = TRUE,
+                        zipi = F, 
+                        step = 100, # randomized networks permutations
+                        width = 14,
+                        label = TRUE,
+                        height = 10
+)
+p = result[[1]]
+p
+# Network comparison across all samples.
+data = result[[2]]
+plotname1 = paste(Envnetplot,"/network_all.jpg",sep = "")
+ggsave(plotname1, p,width = 15,height = 12,dpi = 72)
+plotname1 = paste(Envnetplot,"/network_all.png",sep = "")
+ggsave(plotname1, p,width = 10,height = 8,dpi = 72)
+plotname1 = paste(Envnetplot,"/network_all.pdf",sep = "")
+ggsave(plotname1, p,width = 15,height = 12)
+tablename <- paste(Envnetplot,"/co-occurrence_Grobel_net",".csv",sep = "")
+write.csv(data,tablename)
+
+
 # data obtained from https://doi.org/10.6084/m9.figshare.30356206.v1.
 ## Fig.1A----------------------
 library(readxl)   
