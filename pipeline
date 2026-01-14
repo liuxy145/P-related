@@ -1,0 +1,73 @@
+db=/c/public
+    #--Set working directory 
+    wd=/d/P/
+    PATH=$PATH:${db}/win
+    cd ${wd}
+  # Create a seq directory and save the raw sequencing data in it.
+    mkdir -p seq
+    ls -lsh seq
+  # Save the experimental design file “metadata.tsv” to the result directory (result/).
+    mkdir -p result
+    mkdir -p temp
+  #view the contents of the metadata.tsv file.
+    cat -A ./metadata.tsv | head -n3
+     sed -i 's/\r/\n/' ./metadata.tsv
+     cat -A ./metadata.tsv | head -n3
+  # Decompress the original sequencing files and examine their contents.
+  time gunzip seq/*.gz
+   ls seq/
+  # Merge paired-end sequences.
+  time for i in `tail -n+2 ./metadata.tsv | cut -f 1`;do
+      ${db}/win/vsearch --fastq_mergepairs seq/${i}_1.fq --reverse seq/${i}_2.fq \
+      --fastqout temp/${i}.merged.fq --relabel ${i}.
+    done &
+    # Merge all samples into a single file.
+    cat temp/*.merged.fq > temp/all.fq
+    ls -lsh temp/all.fq
+    head -n 6 temp/all.fq|cut -c1-60
+  # Trim primers and perform quality control.
+    time ${db}/win/vsearch --fastx_filter temp/all.fq \
+      --fastq_stripleft 29 --fastq_stripright 18 \
+      --fastq_maxee_rate 0.01 \
+      --fastaout temp/filtered.fa
+      head -n 2 temp/filtered.fa
+  # Dereplicate.
+  time ${db}/win/vsearch --derep_fulllength temp/filtered.fa \
+      --output temp/uniques.fa --relabel Uni --minuniquesize
+      ls -lsh temp/uniques.fa
+    head -n 2 temp/uniques.fa
+  # Denoise.
+  time ${db}/win/usearch -unoise3 temp/uniques.fa \
+      -zotus temp/zotus.fa
+  # Rename sequence identifiers for easier recognition.
+    sed 's/Zotu/OTU_/g' temp/zotus.fa > temp/otus.fa
+    head -n 2 temp/otus.fa
+    mkdir -p result/raw
+  # Remove chimeras based on reference sequences.
+  cp -f temp/otus.fa result/raw/otus.fa
+  # vsearch generate feature table.
+    time ${db}/win/vsearch --usearch_global temp/filtered.fa --db result/raw/otus.fa \
+    	--otutabout result/raw/otutab.txt --id 0.97 --threads 6
+      sed -i 's/\r//' result/raw/otutab.txt
+    head -n3 result/raw/otutab.txt |cat -A
+  # Construct phylogenetic tree.
+    ${db}/win/usearch -cluster_agg result/raw/otus.fa -treeout result/otus.tree
+  # Assign taxonomy
+  time ${db}/win/vsearch --sintax result/raw/otus.fa --db ${db}/usearch/utax_reference_dataset_all_02.02.2019.fasta \
+      --tabbedout result/raw/otus.sintax --sintax_cutoff 0.8
+    head result/raw/otus.sintax
+    cp result/raw/otu* result/
+    cut -f 1,4 result/otus.sintax \
+      |sed 's/\td/\tk/;s/:/__/g;s/,/;/g;s/"//g;s/\/Chloroplast//' \
+      > result/taxonomy2.txt
+    head -n3 result/taxonomy2.txt
+     awk 'BEGIN{OFS=FS="\t"}{delete a; a["k"]="Unassigned";a["p"]="Unassigned";a["c"]="Unassigned";a["o"]="Unassigned";a["f"]="Unassigned";a["g"]="Unassigned";a["s"]="Unassigned";\
+      split($2,x,";");for(i in x){split(x[i],b,"__");a[b[1]]=b[2];} \
+      print $1,a["k"],a["p"],a["c"],a["o"],a["f"],a["g"],a["s"];}' \
+      result/taxonomy2.txt > temp/otus.tax
+    sed 's/;/\t/g;s/.__//g;' temp/otus.tax|cut -f 1-8 | \
+      sed '1 s/^/OTUID\tKingdom\tPhylum\tClass\tOrder\tFamily\tGenus\tSpecies\n/' \
+      > result/taxonomy.txt
+    head -n3 result/taxonomy.txt
+
+    
