@@ -173,6 +173,28 @@ for (j in c(2:6)) {
   filename = paste(diffpath.2,"/","_",j,"_","edger_all.csv",sep = "")
   write.csv(res,filename)
 }
+# --------------Stemp analysis-------------------
+source("E:\\Shared_Folder\\Function_local\\R_function\\micro/stemp_diff.R")
+diffpath = paste(otupath,"/stemp_diff/",sep = "")
+dir.create(diffpath)
+allgroup <- combn(unique(map$Group),2)
+for (i in 1:dim(allgroup)[2]) {
+  ps_sub <- phyloseq::subset_samples(ps,Group %in% allgroup[,i]);ps_sub
+  for (j in 2:6) {
+    p <- stemp_diff(ps = ps_sub,Top = 20,ranks = j)
+    p
+    # filename = paste(diffpath,"/",paste(allgroup[,i][1],allgroup[,i][2],sep = "_"),"stemp_P_plot.csv",sep = "")
+    # write.csv(diff.mean,filename)
+    filename = paste(diffpath,"/",paste(allgroup[,i][1],
+                                        allgroup[,i][2],sep = "_"),phyloseq::rank.names(ps)[j],"stemp_plot.pdf",sep = "")
+    ggsave(filename,p,width = 14,height = 6)
+    
+    filename = paste(diffpath,"/",paste(allgroup[,i][1],
+                                        allgroup[,i][2],sep = "_"),phyloseq::rank.names(ps)[j],"stemp_plot.jpg",sep = "")
+    ggsave(filename,p,width = 14,height = 6)
+  }
+}
+detach("package:patchwork")
 
 # -----------------Calculate βNTI.------------------
 library(phyloseq)
