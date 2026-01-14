@@ -1,3 +1,5 @@
+# The microbiome data were sourced from the Genome Sequence Archive at the BIG Data Center, Chinese Academy of Sciences (Accession Number: CRA028919) and processed using a standard pipeline. 
+# The metabolomics data were obtained from OMIX, China National Center for Bioinformation / Beijing Institute of Genomics, Chinese Academy of Sciences (https://ngdc.cncb.ac.cn/omix/release/OMIX012408) and were pre-processed using the online platform MetaboAnalyst.
 #------Create phyloseq object.----------
 metadata = read.delim("./metadata.tsv")
 head(metadata)
