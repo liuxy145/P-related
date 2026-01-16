@@ -333,6 +333,231 @@ ftab = ps %>% scale_micro() %>%
 ) %>% vegan_otu() %>%
   as.data.frame()
 head(ftab)
+#--------------PLS-DA------------------------------------------------------------
+
+# Load required packages
+library(mixOmics)     # For PLS-DA analysis
+library(ggplot2)      # For visualization
+library(dplyr)        # For data manipulation
+library(tidyr)        # For data reshaping
+
+# Data preprocessing
+# Log2 transformation with pseudo-count
+log2_transform <- function(x) {
+  x_nozero <- x
+  x_nozero[x_nozero == 0] <- 0.5 * min(x[x > 0], na.rm = TRUE)
+  log2(x_nozero + 1)
+}
+
+# Pareto scaling
+paretoscale <- function(x) {
+  # Center by mean
+  x_centered <- scale(x, center = TRUE, scale = FALSE)
+  # Scale by sqrt of standard deviation
+  x_scaled <- x_centered / sqrt(apply(x_centered, 2, sd))
+  return(x_scaled)
+}
+
+# Apply transformations
+X_log <- apply(metabolomics_matrix, 2, log2_transform)
+X_scaled <- paretoscale(X_log)
+
+# Determine optimal number of PLS-DA components
+set.seed(123)
+optimal_ncomp <- tune.splsda(
+  X_scaled, 
+  Y,
+  ncomp = min(10, ncol(X_scaled) - 1),
+  validation = "Mfold",
+  folds = 5,
+  nrepeat = 10,
+  dist = "centroids.dist",
+  progressBar = FALSE
+)$choice.ncomp$ncomp
+
+cat("Optimal number of PLS-DA components:", optimal_ncomp, "\n")
+
+# Build PLS-DA model
+set.seed(123)
+plsda_model <- plsda(
+  X_scaled,
+  Y,
+  ncomp = optimal_ncomp,
+  scale = FALSE  # Data already scaled
+)
+
+# Cross-validation for model performance
+set.seed(123)
+cv_results <- perf(
+  plsda_model,
+  validation = "Mfold",
+  folds = 5,
+  nrepeat = 10,
+  dist = "centroids.dist",
+  progressBar = FALSE
+)
+
+# Extract model statistics
+# Explained variance
+R2X <- plsda_model$prop_expl_var$X  # X variance explained
+R2Y <- plsda_model$prop_expl_var$Y  # Y variance explained
+
+# Classification error rates and Q²
+error_rates <- cv_results$error.rate$overall[, "centroids.dist"]
+Q2_values <- 1 - error_rates  # Q² = 1 - classification error rate
+
+# Key statistics for first 2 components
+stats_summary <- data.frame(
+  Component = c("PC1", "PC2", "Cumulative (PC1+PC2)"),
+  R2X = c(R2X[1] * 100, R2X[2] * 100, sum(R2X[1:2]) * 100),
+  R2Y = c(R2Y[1] * 100, R2Y[2] * 100, sum(R2Y[1:2]) * 100),
+  Q2 = c(Q2_values[1] * 100, Q2_values[2] * 100, mean(Q2_values[1:2]) * 100)
+)
+
+cat("\nModel Performance Statistics:\n")
+print(round(stats_summary, 1))
+
+# ANOVA for PLS-DA components
+# Extract component scores
+component_scores <- plsda_model$variates$X[, 1:optimal_ncomp]
+colnames(component_scores) <- paste0("PC", 1:optimal_ncomp)
+
+# Perform ANOVA for each component
+anova_results <- data.frame(
+  Component = character(),
+  F_value = numeric(),
+  P_value = numeric(),
+  Significance = character(),
+  stringsAsFactors = FALSE
+)
+
+for (i in 1:min(3, optimal_ncomp)) {  # Test first 3 components
+  anova_test <- aov(component_scores[, i] ~ Y)
+  anova_summary <- summary(anova_test)[[1]]
+  
+  anova_results <- rbind(anova_results, data.frame(
+    Component = paste0("PC", i),
+    F_value = anova_summary$"F value"[1],
+    P_value = anova_summary$"Pr(>F)"[1],
+    Significance = ifelse(anova_summary$"Pr(>F)"[1] < 0.001, "***",
+                         ifelse(anova_summary$"Pr(>F)"[1] < 0.01, "**",
+                                ifelse(anova_summary$"Pr(>F)"[1] < 0.05, "*", "ns")))
+  ))
+}
+
+cat("\nANOVA Results for PLS-DA Components:\n")
+print(anova_results)
+
+# Create comprehensive PLS-DA score plot
+plot_data <- data.frame(
+  Sample = rownames(component_scores),
+  PC1 = component_scores[, 1],
+  PC2 = component_scores[, 2],
+  Group = Y
+)
+plsda_plot <- ggplot(plot_data, aes(x = PC1, y = PC2, color = Group, shape = Group)) +
+  geom_point(size = 4, alpha = 0.8) +
+  stat_ellipse(level = 0.95, linetype = "dashed", size = 0.8) +
+  annotate("text",
+           x = min(plot_data$PC1) + 0.02 * diff(range(plot_data$PC1)),
+           y = max(plot_data$PC2) - 0.02 * diff(range(plot_data$PC2)),
+           label = sprintf(
+             "PLS-DA Model Performance\nR²X(cum) = %.1f%%\nR²Y(cum) = %.1f%%\nQ² = %.1f%%\n\nANOVA Results:\nPC1: p = %.4f%s\nPC2: p = %.4f%s",
+             sum(R2X[1:2]) * 100,
+             sum(R2Y[1:2]) * 100,
+             mean(Q2_values[1:2]) * 100,
+             anova_results$P_value[1],
+             anova_results$Significance[1],
+             anova_results$P_value[2],
+             anova_results$Significance[2]
+           ),
+           hjust = 0, vjust = 1, size = 3.5,
+           color = "darkblue", fontface = "bold") +
+  labs(
+    x = paste0("PC1 (", round(R2X[1] * 100, 1), "%)"),
+    y = paste0("PC2 (", round(R2X[2] * 100, 1), "%)"),
+    title = "Fig 3B: PLS-DA Score Plot",
+    subtitle = "Metabolomic profiles with 5-fold cross-validation",
+    color = "Experimental Group",
+    shape = "Experimental Group"
+  ) +
+  scale_color_brewer(palette = "Set1") +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
+
+pdf("Fig3B_PLSDA_ScorePlot.pdf", width = 10, height = 8)
+print(plsda_plot)
+dev.off()
+
+# Create model performance visualization
+performance_data <- data.frame(
+  Component = 1:length(R2X),
+  R2X = R2X * 100,
+  R2Y = R2Y * 100,
+  Q2 = Q2_values * 100
+)
+
+performance_long <- performance_data %>%
+  pivot_longer(
+    cols = c(R2X, R2Y, Q2),
+    names_to = "Metric",
+    values_to = "Value"
+  )
+
+performance_plot <- ggplot(performance_long %>% filter(Component <= 5), 
+                           aes(x = Component, y = Value, color = Metric)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "gray50") +
+  scale_x_continuous(breaks = 1:5) +
+  scale_color_manual(
+    values = c("R2X" = "#E41A1C", "R2Y" = "#377EB8", "Q2" = "#4DAF4A"),
+    labels = c("R²X (X variance)", "R²Y (Y variance)", "Q² (predictive)")
+  ) +
+  labs(
+    x = "Number of Components",
+    y = "Percentage (%)",
+    title = "PLS-DA Model Performance Metrics",
+    subtitle = "5-fold cross-validation with 10 repeats"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+# Save performance plot
+pdf("PLSDA_Performance_Metrics.pdf", width = 8, height = 6)
+print(performance_plot)
+dev.off()
+
+# Save statistical results
+write.csv(stats_summary, "PLSDA_Model_Statistics.csv", row.names = FALSE)
+write.csv(anova_results, "PLSDA_ANOVA_Results.csv", row.names = FALSE)
+for(i in 1:nrow(stats_summary)) {
+  cat(sprintf("   %s: R²X=%.1f%%, R²Y=%.1f%%, Q²=%.1f%%\n",
+              stats_summary$Component[i],
+              stats_summary$R2X[i],
+              stats_summary$R2Y[i],
+              stats_summary$Q2[i]))
+}
+cat("\n")
+
+cat("5. STATISTICAL SIGNIFICANCE (ANOVA)\n")
+for(i in 1:nrow(anova_results)) {
+  cat(sprintf("   %s: F=%.3f, p=%.4f %s\n",
+              anova_results$Component[i],
+              anova_results$F_value[i],
+              anova_results$P_value[i],
+              anova_results$Significance[i]))
+}
+sink()
 
 #----------Co-inertia analysis of metabolites influencing microbial communities via RDA/CCA.---------------------
 ps16s = base::readRDS("./data/dataNEW/ps_16s.rds")
