@@ -173,7 +173,7 @@ for (j in c(2:6)) {
   filename = paste(diffpath.2,"/","_",j,"_","edger_all.csv",sep = "")
   write.csv(res,filename)
 }
-# --------------Stemp analysis-------------------
+# --------------STAMP analysis-------------------
 source("E:\\Shared_Folder\\Function_local\\R_function\\micro/stemp_diff.R")
 diffpath = paste(otupath,"/stemp_diff/",sep = "")
 dir.create(diffpath)
