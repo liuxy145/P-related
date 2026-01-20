@@ -283,7 +283,6 @@ library(sna)
 library(phyloseq)
 library(ggClusterNet2)
 library(phyloseq)
-ps_filtered = filter_taxa(ps, function(x) sum(x > 0) / length(x) > 0.1, TRUE) 
 ps = ps_filtered
 result = ggClusterNet::network.2(ps = ps, 
                    N = 500,
